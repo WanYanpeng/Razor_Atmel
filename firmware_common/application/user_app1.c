@@ -46,6 +46,11 @@ volatile u32 G_u32UserApp1Flags;                       /* Global state flags */
 
 /*--------------------------------------------------------------------------------------------------------------------*/
 /* Existing variables (defined in other files -- should all contain the "extern" keyword) */
+extern u32 G_u32AntApiCurrentDataTimeStamp;                       /* From ant_api.c */
+extern AntApplicationMessageType G_eAntApiCurrentMessageClass;    /* From ant_api.c */
+extern u8 G_au8AntApiCurrentMessageBytes[ANT_APPLICATION_MESSAGE_BYTES];  /* From ant_api.c */
+extern AntExtendedDataType G_sAntApiCurrentMessageExtData;        /* From ant_api.c */
+
 extern volatile u32 G_u32SystemFlags;                  /* From main.c */
 extern volatile u32 G_u32ApplicationFlags;             /* From main.c */
 
@@ -57,14 +62,20 @@ extern volatile u32 G_u32SystemTime1s;                 /* From board-specific so
 Global variable definitions with scope limited to this local application.
 Variable names shall start with "UserApp1_" and be declared as static.
 ***********************************************************************************************************************/
+static u32 UserApp1_u32DataMsgCount = 0;             /* Counts the number of ANT_DATA packets received */
+static u32 UserApp1_u32TickMsgCount = 0;             /* Counts the number of ANT_TICK packets received */
+
 static fnCode_type UserApp1_StateMachine;            /* The state machine function pointer */
-//static u32 UserApp1_u32Timeout;                      /* Timeout counter used across states */
+static u32 UserApp1_u32Timeout;                      /* Timeout counter used across states */
 
 
 /**********************************************************************************************************************
 Function Definitions
 **********************************************************************************************************************/
-
+static void UserApp1SM_WaitChannelOpen(void);
+static void UserApp1SM_WaitChannelAssign(void);
+static void UserApp1SM_ChannelOpen(void);
+static void UserApp1SM_WaitChannelClose(void);
 /*--------------------------------------------------------------------------------------------------------------------*/
 /* Public functions                                                                                                   */
 /*--------------------------------------------------------------------------------------------------------------------*/
@@ -72,8 +83,6 @@ Function Definitions
 Global variable definitions with scope limited to this local application.
 Variable names shall start with "UserApp1_" and be declared as static.
 *************************************************************************/
-static u32 UserApp1_u32DataMsgCount = 0;   /* ANT_DATA packets received */
-static u32 UserApp1_u32TickMsgCount = 0;   /* ANT_TICK packets received */
 
 /*--------------------------------------------------------------------------------------------------------------------*/
 /* Protected functions                                                                                                */
@@ -169,7 +178,30 @@ void UserApp1RunActiveState(void)
 /*--------------------------------------------------------------------------------------------------------------------*/
 /* Private functions                                                                                                  */
 /*--------------------------------------------------------------------------------------------------------------------*/
+/*-------------------------------------------------------------------------------------------------------------------*/
+/* Wait for the ANT channel assignment to finish */
+static void UserApp1SM_WaitChannelAssign(void)
+{
+  /* Check if the channel assignment is complete */
+  if(AntRadioStatusChannel(ANT_CHANNEL_USERAPP) == ANT_CONFIGURED)
+  {
+    LedOff(RED);
+    LedOn(YELLOW);
+    
+    LedOff(RED);
+    LedOn(GREEN);
 
+    UserApp1_StateMachine = UserApp1SM_Idle;
+  }
+  
+  /* Monitor for timeout */
+  if( IsTimeUp(&UserApp1_u32Timeout, 5000) )
+  {
+    DebugPrintf("\n\r***Channel assignment timeout***\n\n\r");
+    UserApp1_StateMachine = UserApp1SM_Error;
+  }
+      
+} /* end UserApp1SM_WaitChannelAssign() */
 
 /**********************************************************************************************************************
 State Machine Function Definitions
@@ -192,31 +224,31 @@ static void UserApp1SM_Idle(void)
     LedBlink(GREEN, LED_2HZ);
     
     /* Set timer and advance states */
-    UserApp_u32Timeout = G_u32SystemTime1ms;
-    UserApp_StateMachine = UserAppSM_WaitChannelOpen;
+    UserApp1_u32Timeout = G_u32SystemTime1ms;
+    UserApp1_StateMachine = UserApp1SM_WaitChannelOpen;
   }
 } /* end UserApp1SM_Idle() */
     
-static void UserAppSM_WaitChannelOpen(void)
+static void UserApp1SM_WaitChannelOpen(void)
 {
   /* Monitor the channel status to check if channel is opened */
   if(AntRadioStatusChannel(ANT_CHANNEL_USERAPP) == ANT_OPEN)
   {
     LedOn(GREEN);
-    UserApp_StateMachine = UserAppSM_ChannelOpen;
+    UserApp1_StateMachine = UserApp1SM_ChannelOpen;
   }
   
   /* Check for timeout */
-  if( IsTimeUp(&UserApp_u32Timeout, TIMEOUT_VALUE) )
+  if( IsTimeUp(&UserApp1_u32Timeout, TIMEOUT_VALUE) )
   {
     AntCloseChannelNumber(ANT_CHANNEL_USERAPP);
     LedOff(GREEN);
     LedOn(YELLOW);
-    UserApp_StateMachine = UserAppSM_Idle;
+    UserApp1_StateMachine = UserApp1SM_Idle;
   }
 } /* end UserAppSM_WaitChannelOpen() */
 
-static void UserAppSM_ChannelOpen(void)
+static void UserApp1SM_ChannelOpen(void)
 {
   static u8 u8LastState = 0xff;
   static u8 au8TickMessage[] = "EVENT x\n\r";  /* "x" at index [6] will be replaced by the current code */
@@ -238,8 +270,8 @@ static void UserAppSM_ChannelOpen(void)
     LedBlink(GREEN, LED_2HZ);
     
     /* Set timer and advance states */
-    UserApp_u32Timeout = G_u32SystemTime1ms;
-    UserApp_StateMachine = UserAppSM_WaitChannelClose;
+    UserApp1_u32Timeout = G_u32SystemTime1ms;
+    UserApp1_StateMachine = UserApp1SM_WaitChannelClose;
   } /* end if(WasButtonPressed(BUTTON0)) 
     /* A slave channel can close on its own, so explicitly check channel status */
   if(AntRadioStatusChannel(ANT_CHANNEL_USERAPP) != ANT_OPEN)
@@ -248,8 +280,8 @@ static void UserAppSM_ChannelOpen(void)
     LedOff(BLUE);
     u8LastState = 0xff;
     
-    UserApp_u32Timeout = G_u32SystemTime1ms;
-    UserApp_StateMachine = UserAppSM_WaitChannelClose;
+    UserApp1_u32Timeout = G_u32SystemTime1ms;
+    UserApp1_StateMachine = UserApp1SM_WaitChannelClose;
   } /* if(AntRadioStatusChannel(ANT_CHANNEL_USERAPP) != ANT_OPEN) */
     /* Always check for ANT messages */
   if( AntReadAppMessageBuffer() )
@@ -257,17 +289,17 @@ static void UserAppSM_ChannelOpen(void)
      /* New data message: check what it is */
     if(G_eAntApiCurrentMessageClass == ANT_DATA)
     {
-      UserApp_u32DataMsgCount++;
+      UserApp1_u32DataMsgCount++;
     } /* end if(G_eAntApiCurrentMessageClass == ANT_DATA) */
 
     else if(G_eAntApiCurrentMessageClass == ANT_TICK)
     {
-      UserApp_u32TickMsgCount++;
+      UserApp1_u32TickMsgCount++;
     } /* end else if(G_eAntApiCurrentMessageClass == ANT_TICK) */
   } /* end AntReadAppMessageBuffer() */
 }
 
-static void UserAppSM_WaitChannelClose(void)
+static void UserApp1SM_WaitChannelClose(void)
 {
   /* Monitor the channel status to check if channel is closed */
   if(AntRadioStatusChannel(ANT_CHANNEL_USERAPP) == ANT_CLOSED)
@@ -275,17 +307,17 @@ static void UserAppSM_WaitChannelClose(void)
     LedOff(GREEN);
     LedOn(YELLOW);
 
-    UserApp_StateMachine = UserAppSM_Idle;
+    UserApp1_StateMachine = UserApp1SM_Idle;
   }
   
   /* Check for timeout */
-  if( IsTimeUp(&UserApp_u32Timeout, TIMEOUT_VALUE) )
+  if( IsTimeUp(&UserApp1_u32Timeout, TIMEOUT_VALUE) )
   {
     LedOff(GREEN);
     LedOff(YELLOW);
     LedBlink(RED, LED_4HZ);
 
-    UserApp_StateMachine = UserAppSM_Error;
+    UserApp1_StateMachine = UserApp1SM_Error;
   }
     
 } /* end UserAppSM_WaitChannelClose() */
