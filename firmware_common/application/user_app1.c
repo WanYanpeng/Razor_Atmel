@@ -290,11 +290,118 @@ static void UserApp1SM_ChannelOpen(void)
     if(G_eAntApiCurrentMessageClass == ANT_DATA)
     {
       UserApp1_u32DataMsgCount++;
+      /* We are synced with a device, so blue is solid */
+      LedOff(GREEN);
+      LedOn(BLUE);
+
+      /* Check if the new data is the same as the old data and update as we go */
+      bGotNewData = FALSE;
+      for(u8 i = 0; i < ANT_APPLICATION_MESSAGE_BYTES; i++)
+      {
+        if(G_au8AntApiCurrentMessageBytes[i] != au8LastAntData[i])
+        {
+          bGotNewData = TRUE;
+          au8LastAntData[i] = G_au8AntApiCurrentMessageBytes[i];
+
+          au8DataContent[2 * i]     = HexToASCIICharUpper(G_au8AntApiCurrentMessageBytes[i] / 16);
+          au8DataContent[2 * i + 1] = HexToASCIICharUpper(G_au8AntApiCurrentMessageBytes[i] % 16); 
+        }
+      }
+      
+      if(bGotNewData)
+      {
+        /* We got new data: show on LCD */
+        LCDClearChars(LINE2_START_ADDR, 20); 
+        LCDMessage(LINE2_START_ADDR, au8DataContent);     
+    
+
+        /* Update our local message counter and send the message back */
+        au8TestMessage[7]++;
+        if(au8TestMessage[7] == 0)
+        {
+          au8TestMessage[6]++;
+          if(au8TestMessage[6] == 0)
+          {
+            au8TestMessage[5]++;
+          }
+        }
+        AntQueueBroadcastMessage(ANT_CHANNEL_USERAPP, au8TestMessage);
+
+        /* Check for a special packet and respond */
+        if(G_au8AntApiCurrentMessageBytes[0] == 0xA5)
+        {
+          LedOff(LCD_RED);
+          LedOff(LCD_GREEN);
+          LedOff(LCD_BLUE);
+          
+          if(G_au8AntApiCurrentMessageBytes[1] == 1)
+          {
+            LedOn(LCD_RED);
+          }
+          
+          if(G_au8AntApiCurrentMessageBytes[2] == 1)
+          {
+            LedOn(LCD_GREEN);
+          }
+
+          if(G_au8AntApiCurrentMessageBytes[3] == 1)
+          {
+            LedOn(LCD_BLUE);
+          }
+        } 
+    
+      } /* end if(bGotNewData) */
     } /* end if(G_eAntApiCurrentMessageClass == ANT_DATA) */
 
     else if(G_eAntApiCurrentMessageClass == ANT_TICK)
     {
       UserApp1_u32TickMsgCount++;
+           /* Look at the TICK contents to check the event code and respond only if it's different */
+      if(u8LastState != G_au8AntApiCurrentMessageBytes[ANT_TICK_MSG_EVENT_CODE_INDEX])
+      {
+        /* The state changed so update u8LastState and queue a debug message */
+        u8LastState = G_au8AntApiCurrentMessageBytes[ANT_TICK_MSG_EVENT_CODE_INDEX];
+        au8TickMessage[6] = HexToASCIICharUpper(u8LastState);
+        DebugPrintf(au8TickMessage);
+
+        /* Parse u8LastState to update LED status */
+        switch (u8LastState)
+        {
+          /* If we are paired but missing messages, blue blinks */
+          case EVENT_RX_FAIL:
+          {
+            LedOff(GREEN);
+            LedBlink(BLUE, LED_2HZ);
+            break;
+          }
+
+          /* If we drop to search, LED is green */
+          case EVENT_RX_FAIL_GO_TO_SEARCH:
+          {
+            LedOff(BLUE);
+            LedOn(GREEN);
+            break;
+          }
+          /* If the search times out, the channel should automatically close */
+          case EVENT_RX_SEARCH_TIMEOUT:
+          {
+            DebugPrintf("Search timeout event\r\n");
+            break;
+          }
+
+          case EVENT_CHANNEL_CLOSED:
+          {
+            DebugPrintf("Channel closed event\r\n");
+            break;
+          }
+
+            default:
+          {
+            DebugPrintf("Unexpected Event\r\n");
+            break;
+          }
+        } /* end switch (G_au8AntApiCurrentMessageBytes) */
+      } /* end if (u8LastState != G_au8AntApiCurrentMessageBytes[ANT_TICK_MSG_EVENT_CODE_INDEX]) */
     } /* end else if(G_eAntApiCurrentMessageClass == ANT_TICK) */
   } /* end AntReadAppMessageBuffer() */
 }

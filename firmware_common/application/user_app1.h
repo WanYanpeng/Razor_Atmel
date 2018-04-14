@@ -30,8 +30,8 @@ Constants / Definitions
 **********************************************************************************************************************/
 #define ANT_CHANNEL_USERAPP             ANT_CHANNEL_0         
 #define ANT_CHANNEL_TYPE_USERAPP        CHANNEL_TYPE_SLAVE    
-#define ANT_DEVICEID_LO_USERAPP         (u8)0               
-#define ANT_DEVICEID_HI_USERAPP         (u8)0        
+#define ANT_DEVICEID_LO_USERAPP         (u8)29               
+#define ANT_DEVICEID_HI_USERAPP         (u8)51        
 #define ANT_DEVICE_TYPE_USERAPP         (u8)0        
 #define ANT_TRANSMISSION_TYPE_USERAPP   (u8)0             
 #define ANT_CHANNEL_PERIOD_LO_USERAPP   (u8)0x00       
@@ -39,6 +39,7 @@ Constants / Definitions
 #define ANT_FREQUENCY_USERAPP           (u8)50           
 #define ANT_TX_POWER_USERAPP            RADIO_TX_POWER_4DBM 
 
+#define TIMEOUT_VALUE                   (u32)2000             /* Maximum allowed timeout value for any transition state */
 /**********************************************************************************************************************
 Function Declarations
 **********************************************************************************************************************/
