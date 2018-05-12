@@ -33,7 +33,7 @@ Search "####" for ANT Channel ID defaults
 /* Network number */
 #define ANT_NETWORK_NUMBER_BYTES  (u8)8
 #define ANT_DEFAULT_NETWORK_KEY   (u8)0
-#define N_0                       (u8)0         
+#define N_0                       (u8)0        
 #define N_1                       (u8)0         
 #define N_2                       (u8)0         
 #define N_3                       (u8)0         
